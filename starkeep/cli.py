@@ -22,6 +22,7 @@ from .lastfm import LastfmClient
 from .qobuz import download_album as qobuz_download_album
 from .qobuz import download_track as qobuz_download_track
 from .subsonic import SubsonicClient
+from .ytm import download_with_fallback
 
 
 def status(cfg) -> int:
@@ -131,6 +132,10 @@ def doctor(cfg) -> int:
             ok = False
     else:
         print(f"[INFO] downloader={cfg.downloader} — yt-dlp not required")
+        if shutil.which("yt-dlp"):
+            print("[ OK ] yt-dlp on PATH — YouTube Music fallback available")
+        else:
+            print("[WARN] yt-dlp not on PATH — Qobuz failures have no YTM fallback (brew install yt-dlp)")
     if shutil.which("ffmpeg"):
         print("[ OK ] ffmpeg found on PATH")
     else:
@@ -299,13 +304,19 @@ def main() -> None:
             print("error: library_dir not set in config", file=sys.stderr)
             sys.exit(1)
         if args.track:
-            print(f"Searching Qobuz for track: {args.query!r}\n")
+            print(f"Searching for track: {args.query!r} (Qobuz first, YTM fallback)\n")
             try:
-                res = qobuz_download_track(args.query, cfg.library_dir,
-                                           dry_run=args.dry_run)
+                res = download_with_fallback(args.query, cfg.library_dir,
+                                             dry_run=args.dry_run)
             except Exception as e:
-                print(f"qobuz track download failed: {e}", file=sys.stderr)
+                print(f"track download failed (Qobuz + YouTube Music fallback): {e}",
+                      file=sys.stderr)
                 sys.exit(1)
+            src = res.get("source", "qobuz")
+            if src != "qobuz":
+                print(f"Source: {src} (~250kbps AAC, not hi-res)")
+                if res.get("qobuz_error"):
+                    print(f"  Qobuz failed: {res['qobuz_error']}")
             suffix = f"  [album: {res['album']}]" if res["album"] else ""
             print(f"Match: {res['artist']} - {res['title']}{suffix}")
             print(f"Destination: {res['dest']}")
